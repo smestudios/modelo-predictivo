@@ -4,14 +4,13 @@ Script de modelado predictivo espacial para índices de vegetación y agua.
 Este módulo incorpora dos escenarios principales basados en literatura
 científica resumida por el usuario:
 
-- Escenario de degradación: simula menos precipitación (≈-15%), mayor
-  temperatura (+1.5 °C), más demanda evaporativa y escorrentía, y
-  ligeros incrementos de radiación. Los índices de vegetación y agua se
-  ajustan a la baja para reflejar pérdida de biomasa y humedad.
-- Escenario de conservación: simula mayor precipitación (+10%),
-  enfriamiento local moderado (-0.5 °C), menor radiación y demanda
-  evaporativa, y más retención hídrica. Los índices se ajustan al alza
-  coherente con recuperación ecológica.
+- Escenario de degradación moderada: precipitación −20%, temperatura
+  +2 °C, radiación +2%, PET +20%, ET −10% y escorrentía +20% (aumentos y
+  reducciones coherentes con los rangos IPCC/regionales citados).
+- Escenario de conservación moderada: precipitación +10%, temperatura
+  −1 °C (mitiga el calentamiento local), radiación −2%, PET −10%, ET
+  +10% y escorrentía −10%, representando restauración hídrica y
+  microclima más fresco.
 """
 from __future__ import annotations
 
@@ -66,41 +65,33 @@ class ScenarioAdjustment:
     temp_offset: float
     rad_factor: float
     pet_factor: float
+    et_factor: float
     runoff_factor: float
     veg_index_factor: Dict[str, float]
     rio_index_factor: Dict[str, float]
 
 
 SCENARIOS: Dict[str, ScenarioAdjustment] = {
-    # Valores medios basados en la literatura proporcionada:
-    # - precipitación -10% a -20% -> factor ~0.85
-    # - temperatura +1 a +3 °C -> +1.5 °C moderado
-    # - radiación +2% por menos nubosidad
-    # - PET +10–20% asociada a +1–2 °C
-    # - escorrentía +10–20%
-    # - índices vegetación: NDVI ~-15%, NDMI caídas fuertes (~-40%), NBR -20%
+    # Valores moderados solicitados (derivados de la síntesis de literatura):
+    # Degradación: P −20%, T +2 °C, Rad +2%, PET +20%, ET −10%, Runoff +20%.
     "degradacion": ScenarioAdjustment(
-        precip_factor=0.85,
-        temp_offset=1.5,
+        precip_factor=0.8,
+        temp_offset=2.0,
         rad_factor=1.02,
-        pet_factor=1.15,
-        runoff_factor=1.15,
+        pet_factor=1.20,
+        et_factor=0.90,
+        runoff_factor=1.20,
         veg_index_factor={"NDVI": 0.85, "NDMI": 0.6, "NBR": 0.8},
         rio_index_factor={"MNDWI": 0.85},
     ),
-    # Valores de restauración moderada:
-    # - precipitación +10%
-    # - enfriamiento local ligero (-0.5 °C)
-    # - radiación -2% por mayor nubosidad/sombra
-    # - PET -5% a -10% (se usa -5% conservador)
-    # - escorrentía -15% por más infiltración
-    # - índices vegetación: NDVI +15%, NDMI +20%, NBR +5%, MNDWI +15%
+    # Conservación: P +10%, T −1 °C, Rad −2%, PET −10%, ET +10%, Runoff −10%.
     "conservacion": ScenarioAdjustment(
         precip_factor=1.10,
-        temp_offset=-0.5,
+        temp_offset=-1.0,
         rad_factor=0.98,
-        pet_factor=0.95,
-        runoff_factor=0.85,
+        pet_factor=0.90,
+        et_factor=1.10,
+        runoff_factor=0.90,
         veg_index_factor={"NDVI": 1.15, "NDMI": 1.20, "NBR": 1.05},
         rio_index_factor={"MNDWI": 1.15},
     ),
@@ -350,7 +341,7 @@ def aplicar_ajustes_climaticos(row: pd.Series, escenario: str) -> pd.Series:
     row_adj["Tmean_C"] = row["Tmean_C"] + cfg.temp_offset
     row_adj["Rad_MJm2"] = row["Rad_MJm2"] * cfg.rad_factor
     row_adj["PET_mm"] = row["PET_mm"] * cfg.pet_factor
-    # ET_mm queda como está (depende de la vegetación real)
+    row_adj["ET_mm"] = row["ET_mm"] * cfg.et_factor
     row_adj["Runoff_mm"] = row["Runoff_mm"] * cfg.runoff_factor
     return row_adj
 
@@ -495,7 +486,11 @@ if __name__ == "__main__":
     print("=== MODELO PREDICTIVO ESPACIAL (ESCENARIOS DEGRADACIÓN/CONSERVACIÓN) ===")
 
     # 1. Año/mes a predecir
-    target_year = int(input("Año futuro a predecir (debe existir en el CSV de clima): "))
+    target_year = int(
+        input(
+            "Año futuro a predecir (si no está en el CSV se usará el mes más reciente): "
+        )
+    )
     target_month = int(input("Mes futuro (1-12): "))
 
     # 2. Cargar clima
